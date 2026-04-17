@@ -1,8 +1,20 @@
-FROM python:3.11
+# base image
+FROM node:18
 
+# рабочая директория
 WORKDIR /app
+
+# копируем зависимости
+COPY package*.json ./
+
+# устанавливаем зависимости
+RUN npm install
+
+# копируем код
 COPY . .
 
-RUN pip install -r requirements.txt
+# порт
+EXPOSE 3000
 
-CMD ["python", "bot.py"]
+# запуск
+CMD ["node", "index.js"]
