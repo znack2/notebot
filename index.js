@@ -2,34 +2,21 @@ require("dotenv").config();
 
 const express = require("express");
 const axios = require("axios");
-const fs = require("fs");
-const path = require("path");
-const simpleGit = require("simple-git");
 
 const app = express();
 app.use(express.json());
 
-// ENV
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const REPO_PATH = process.env.REPO_PATH;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const OWNER = process.env.GITHUB_OWNER;
+const REPO = process.env.GITHUB_REPO;
 const BRANCH = process.env.BRANCH || "main";
-
-const git = simpleGit(REPO_PATH);
-
-// пути
-const TEMPLATES_PATH = path.join(__dirname, "templates");
-
-// sanity check
-if (!fs.existsSync(REPO_PATH)) {
-  console.error("REPO_PATH does not exist:", REPO_PATH);
-  process.exit(1);
-}
 
 // --- helpers ---
 
 function getDateFile() {
   const date = new Date().toISOString().slice(0, 10);
-  return path.join(REPO_PATH, `${date}.md`);
+  return `${date}.md`;
 }
 
 function parseMode(text) {
@@ -38,7 +25,7 @@ function parseMode(text) {
   return { mode: "note", clean: text };
 }
 
-// --- AI ---
+// --- OpenAI ---
 async function processText(text, mode) {
   const prompt = `
 Structure this ${mode} note:
@@ -57,9 +44,7 @@ title, summary, key_points (list), tags (list)
         messages: [{ role: "user", content: prompt }]
       },
       {
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`
-        }
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }
       }
     );
 
@@ -68,7 +53,6 @@ title, summary, key_points (list), tags (list)
     try {
       return JSON.parse(content);
     } catch {
-      // fallback если не JSON
       return {
         title: mode,
         summary: content,
@@ -89,67 +73,84 @@ title, summary, key_points (list), tags (list)
   }
 }
 
-// --- Template ---
-function renderTemplate(templateName, data) {
-  const templateFile = path.join(TEMPLATES_PATH, `${templateName}.md`);
+// --- GitHub API helpers ---
 
-  let template;
+async function getFile(path) {
+  try {
+    const res = await axios.get(
+      `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`,
+      {
+        headers: {
+          Authorization: `Bearer ${GITHUB_TOKEN}`
+        },
+        params: { ref: BRANCH }
+      }
+    );
 
-  if (fs.existsSync(templateFile)) {
-    template = fs.readFileSync(templateFile, "utf-8");
-  } else {
-    // fallback template
-    template = `
-# {{title}}
+    return {
+      content: Buffer.from(res.data.content, "base64").toString("utf-8"),
+      sha: res.data.sha
+    };
 
-{{summary}}
-
-{{points}}
-
-{{raw}}
-
-{{tags}}
-{{date}}
-`;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      return { content: "", sha: null };
+    }
+    throw err;
   }
+}
 
+async function saveFile(path, content) {
+  const existing = await getFile(path);
+
+  const newContent = existing.content + content;
+
+  await axios.put(
+    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`,
+    {
+      message: `update ${new Date().toISOString()}`,
+      content: Buffer.from(newContent).toString("base64"),
+      sha: existing.sha || undefined,
+      branch: BRANCH
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`
+      }
+    }
+  );
+}
+
+// --- format markdown ---
+
+function buildMarkdown(data) {
   const points = (data.key_points || [])
     .map(p => `- ${p}`)
     .join("\n");
 
-  return template
-    .replace("{{title}}", data.title || "")
-    .replace("{{summary}}", data.summary || "")
-    .replace("{{points}}", points)
-    .replace("{{raw}}", data.raw || "")
-    .replace("{{tags}}", (data.tags || []).join(" "))
-    .replace("{{date}}", data.date || "");
-}
+  return `
 
-// --- Save ---
-async function saveNote(content) {
-  const file = getDateFile();
+---
 
-  try {
-    fs.appendFileSync(file, `\n\n---\n\n${content}`);
-  } catch (err) {
-    console.error("File write error:", err.message);
-    return;
-  }
+# ${data.title}
 
-  try {
-    await git.pull("origin", BRANCH);
-    await git.add(".");
-    await git.commit(`update ${new Date().toISOString().slice(0, 10)}`);
-    await git.push("origin", BRANCH);
+## Summary
+${data.summary}
 
-    console.log("Git push success");
-  } catch (err) {
-    console.error("Git error:", err.message);
-  }
+## Points
+${points}
+
+## Raw
+${data.raw}
+
+${(data.tags || []).join(" ")}
+
+${data.date}
+`;
 }
 
 // --- webhook ---
+
 app.post("/webhook", async (req, res) => {
   const text = req.body.message?.text;
   if (!text) return res.sendStatus(200);
@@ -169,10 +170,15 @@ app.post("/webhook", async (req, res) => {
     date: new Date().toISOString()
   };
 
-  const templateName = mode === "meeting" ? "meeting" : "idea";
-  const md = renderTemplate(templateName, data);
+  const md = buildMarkdown(data);
+  const file = getDateFile();
 
-  await saveNote(md);
+  try {
+    await saveFile(file, md);
+    console.log("Saved to GitHub:", file);
+  } catch (err) {
+    console.error("GitHub error:", err.response?.data || err.message);
+  }
 
   res.sendStatus(200);
 });
