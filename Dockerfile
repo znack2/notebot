@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 3000
 
 # запуск
-CMD ["node", "index.js"]
+CMD ["node", "notebot.js"]
