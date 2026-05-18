@@ -13,6 +13,7 @@ const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const OWNER = process.env.GITHUB_OWNER;
 const REPO = process.env.GITHUB_REPO;
 const BRANCH = process.env.BRANCH || "main";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- helpers ---
 
@@ -64,6 +65,34 @@ title, summary, key_points (list), tags (list)
       key_points: [],
       tags: [`#${mode}`, "#raw"]
     };
+  }
+}
+
+// --- Gemini ---
+
+async function makeShortSummary(text) {
+  if (!GEMINI_API_KEY) {
+    console.warn("GEMINI_API_KEY is not set.");
+    return text;
+  }
+
+  const prompt = `Make a short summary of this note:\n\n${text}`;
+
+  try {
+    const res = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: prompt }] }]
+      },
+      {
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+
+    return res.data.candidates[0].content.parts[0].text;
+  } catch (err) {
+    console.error("Gemini API Error:", err?.response?.data || err.message);
+    return text;
   }
 }
 
@@ -218,3 +247,7 @@ app.post("/webhook", async (req, res) => {
 app.listen(3000, () => {
   console.log("Server running on 3000");
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).send('ok')
+})

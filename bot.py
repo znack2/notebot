@@ -4,7 +4,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from openai import OpenAI
 from git import Repo
-from config import BOT_TOKEN, OPENAI_API_KEY, NOTES_PATH
+from config import BOT_TOKEN, OPENAI_API_KEY, NOTES_PATH, GEMINI_API_KEY
+import aiohttp
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -30,6 +31,27 @@ def process_text(text, mode):
     )
 
     return res.choices[0].message.content
+
+
+async def make_short_summary_gemini(text):
+    if not GEMINI_API_KEY:
+        return text
+
+    prompt = f"Make a short summary of this note:\n\n{text}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=payload) as resp:
+                data = await resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            print(f"Gemini Error: {e}")
+            return text
 
 
 # --- Template ---
