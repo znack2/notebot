@@ -21,6 +21,13 @@ function getDateFile() {
   return new Date().toISOString().slice(0, 10) + ".md";
 }
 
+function extractTags(text) {
+  if (!text) return [];
+  const firstLine = text.split('\n')[0].trim();
+  const tags = firstLine.match(/#[^\s#]+/g) || [];
+  return tags;
+}
+
 // --- OpenAI ---
 
 async function processText(text, mode) {
@@ -30,7 +37,7 @@ Structure this ${mode} note:
 ${text}
 
 Return JSON:
-title, summary, key_points (list), tags (list)
+title, summary, key_points (list), tags (list), remind_time (string), previous_believe (string), new_point_of_view (string)
 `;
 
   try {
@@ -147,6 +154,10 @@ function buildMarkdown(data) {
     .map(p => `- ${p}`)
     .join("\n");
 
+  const remind = data.remind_time ? `\n## Remind Time\n${data.remind_time}\n` : "";
+  const prevBelief = data.previous_believe ? `\n## Previous Believe\n${data.previous_believe}\n` : "";
+  const newPOV = data.new_point_of_view ? `\n## New Point of View\n${data.new_point_of_view}\n` : "";
+
   return `
 
 ---
@@ -157,7 +168,7 @@ function buildMarkdown(data) {
 ${data.summary}
 
 ## Points
-${points}
+${points}${remind}${prevBelief}${newPOV}
 
 ## Raw
 ${data.raw}
@@ -197,13 +208,19 @@ app.post("/webhook", async (req, res) => {
 
     try {
       const ai = await processText(text, tag);
+      const firstLineTags = extractTags(text);
+      
+      const allTags = [...new Set([...(ai.tags || []), ...firstLineTags, `#${tag}`])];
 
       const data = {
         title: ai.title || tag,
         summary: ai.summary,
         key_points: ai.key_points || [],
+        remind_time: ai.remind_time || "",
+        previous_believe: ai.previous_believe || "",
+        new_point_of_view: ai.new_point_of_view || "",
         raw: text,
-        tags: ai.tags || [`#${tag}`],
+        tags: allTags,
         date: new Date().toISOString()
       };
 
@@ -227,13 +244,21 @@ app.post("/webhook", async (req, res) => {
 
   const chatId = body.message.chat.id;
 
+  if (text === "/template") {
+    const templateText = `Remind time: \nTags: \nPrevious believe: \nNew point of view: \n\n<Your note here>`;
+    await sendMessage(chatId, templateText);
+    return res.sendStatus(200);
+  }
+
   // отправляем кнопки
   await sendMessage(chatId, "Choose category:", {
     reply_markup: {
       inline_keyboard: [
         [{ text: "Idea", callback_data: "idea" }],
         [{ text: "Meeting", callback_data: "meeting" }],
-        [{ text: "Note", callback_data: "note" }]
+        [{ text: "Note", callback_data: "note" }],
+        [{ text: "Coach", callback_data: "coach" }],
+        [{ text: "Task", callback_data: "task" }]
       ]
     },
     reply_to_message_id: body.message.message_id
