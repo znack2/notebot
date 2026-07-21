@@ -160,8 +160,18 @@ app.use(express.json());
 
 // --- helpers ---
 
-function getDateFile() {
-  return new Date().toISOString().slice(0, 10) + ".md";
+// Path for the individual note file, e.g. notes/2026-07-21T14-32-00-123Z-idea.md
+function getNoteFilePath(tag, date = new Date()) {
+  const safeIso = date.toISOString().replace(/[:.]/g, "-");
+  return `notes/${safeIso}-${tag}.md`;
+}
+
+// Short date used in the index one-liner, e.g. 21.07.26
+function formatDateShort(date = new Date()) {
+  const dd = String(date.getDate()).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const yy = String(date.getFullYear()).slice(-2);
+  return `${dd}.${mm}.${yy}`;
 }
 
 function extractTags(text) {
@@ -408,36 +418,15 @@ async function saveFile(path, content, reqId) {
 
 // --- markdown ---
 
-function buildMarkdown(data) {
-  const points = (data.key_points || []).map(p => `- ${p}`).join("\n");
+// Content for the standalone note file: just the raw note text, no labels.
+function buildNoteContent(rawText) {
+  return `${rawText}\n\n***\n`;
+}
 
-  const remind = data.remind_time ? `\n## Remind Time\n${data.remind_time}\n` : "";
-  const prevBelief = data.previous_believe
-    ? `\n## Previous Believe\n${data.previous_believe}\n`
-    : "";
-  const newPOV = data.new_point_of_view
-    ? `\n## New Point of View\n${data.new_point_of_view}\n`
-    : "";
-
-  return `
-
----
-
-# ${data.title}
-
-## Summary
-${data.summary}
-
-## Points
-${points}${remind}${prevBelief}${newPOV}
-
-## Raw
-${data.raw}
-
-${(data.tags || []).join(" ")}
-
-${data.date}
-`;
+// Content appended to index.md: a single line "DD.MM.YY: summary", no labels.
+function buildIndexEntry(dateShort, summary) {
+  const oneLine = (summary || "").replace(/\s+/g, " ").trim();
+  return `${dateShort}: ${oneLine}\n\n***\n`;
 }
 
 // --- Telegram helpers ---
@@ -512,37 +501,24 @@ app.post("/webhook", async (req, res) => {
       const stepStart = now();
 
       const ai = await processText(text, tag, reqId);
-      const firstLineTags = extractTags(text);
+      const noteDate = new Date();
 
-      const allTags = [
-        ...new Set([...(ai.tags || []), ...firstLineTags, `#${tag}`])
-      ];
+      const noteFile = getNoteFilePath(tag, noteDate);
+      const noteContent = buildNoteContent(text);
 
-      const data = {
-        title: ai.title || tag,
-        summary: ai.summary,
-        key_points: ai.key_points || [],
-        remind_time: ai.remind_time || "",
-        previous_believe: ai.previous_believe || "",
-        new_point_of_view: ai.new_point_of_view || "",
-        raw: text,
-        tags: allTags,
-        date: new Date().toISOString()
-      };
+      const indexEntry = buildIndexEntry(formatDateShort(noteDate), ai.summary);
 
-      const md = buildMarkdown(data);
-      const file = getDateFile();
-
-      await saveFile(file, md, reqId);
+      await saveFile(noteFile, noteContent, reqId);
+      await saveFile("index.md", indexEntry, reqId);
 
       logger.info("Note saved successfully", {
         reqId,
-        file,
-        title: data.title,
+        noteFile,
+        indexFile: "index.md",
         totalDurationMs: elapsedMs(stepStart)
       });
 
-      await sendMessage(chatId, `✅ Saved: ${data.title}`, {}, reqId);
+      await sendMessage(chatId, `✅ Saved: ${noteFile}`, {}, reqId);
     } catch (err) {
       logger.error("Error handling callback_query", {
         reqId,
@@ -595,11 +571,11 @@ app.post("/webhook", async (req, res) => {
     {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Idea", callback_data: "idea" }],
-          [{ text: "Meeting", callback_data: "meeting" }],
-          [{ text: "Note", callback_data: "note" }],
-          [{ text: "Coach", callback_data: "coach" }],
-          [{ text: "Task", callback_data: "task" }]
+          [{ text: "Initial thoughts", callback_data: "initial_thoughts" }],
+          [{ text: "Just idea", callback_data: "just_idea" }],
+          [{ text: "Second reflection", callback_data: "second_reflection" }],
+          [{ text: "From lesson", callback_data: "from_lesson" }],
+          [{ text: "Another person wisdom", callback_data: "another_person_wisdom" }]
         ]
       },
       reply_to_message_id: body.message.message_id
