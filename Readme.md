@@ -3,16 +3,11 @@ Readme.md
 bot
 @my_reminder1987_bot
 
-server - https://railway.com/project/148575dc-f875-4eba-8775-060642978b57/service/98f1bea8-3d97-4288-9354-73471538b26a?environmentId=48879822-608c-405b-a6fd-2bef76958c49
-
 test - 
 https://api.telegram.org/bot{TOKEN}/getWebhookInfo
 https://api.telegram.org/bot{TOKEN}/getMe
 
 https://notebot-production-17f2.up.railway.app/health
-
-curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
--d "url=https://notebot-notebot.up.railway.app/webhook"
 
 
 save here
@@ -35,9 +30,8 @@ check
 	Northflank
 
 
-
-
-server
-https://railway.com/project/148575dc-f875-4eba-8775-060642978b57/service/98f1bea8-3d97-4288-9354-73471538b26a?environmentId=e873d001-c8d7-47d3-9bae-0483881ca64e&id=c77890b7-f2f5-4bee-bfc4-f2cb35a6c690#deploy
-
-
+INSTRUCTION:
+1. generate 2 tokens in github  and replace for local .env and for server separately 
+2. change in the server https://railway.com/project/148575dc-f875-4eba-8775-060642978b57/service/
+3. push local github curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook -d "url=https://notebot-notebot.up.railway.app/webhook"
+4. change setwebhook each time for new code in server curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook -d "url=/<MYSERVER>/webhook
