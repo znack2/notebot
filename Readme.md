@@ -9,6 +9,8 @@ test -
 https://api.telegram.org/bot{TOKEN}/getWebhookInfo
 https://api.telegram.org/bot{TOKEN}/getMe
 
+https://notebot-production-17f2.up.railway.app/health
+
 curl -X POST https://api.telegram.org/bot<TOKEN>/setWebhook \
 -d "url=https://notebot-notebot.up.railway.app/webhook"
 
